@@ -209,6 +209,16 @@ class FragmentRequestGraph(RequestGraph):
 
         return uri == 'a'
 
+    @staticmethod
+    def tp_parts(tp):
+        if tp.endswith('"'):
+            parts = [tp[tp.find('"'):]]
+            st = tp.replace(parts[0], '').rstrip()
+            parts = st.split(" ") + parts
+        else:
+            parts = tp.split(' ')
+        return tuple(parts)
+
     def __init__(self, *args, **kwargs):
         super(FragmentRequestGraph, self).__init__()
         if not args:
@@ -221,24 +231,34 @@ class FragmentRequestGraph(RequestGraph):
         elements = {}
 
         for tp in args:
-            s, p, o = tuple(tp.strip().split(' '))
+            s, p, o = self.tp_parts(tp.strip())
             if s not in elements:
                 if self.__is_variable(s):
-                    elements[s] = BNode(s)
+                    elements[s] = BNode(s.lstrip('?'))
                     self.set((elements[s], RDF.type, STOA.Variable))
                     self.set((elements[s], STOA.label, Literal(s, datatype=XSD.string)))
+                elif self.is_uri(s):
+                    extended = self.__extend_uri(s)
+                    if extended == s:
+                        elements[s] = URIRef(s.lstrip('<').rstrip('>'))
+                    else:
+                        elements[s] = self.__extend_uri(s)
             if p not in elements:
                 if self.is_uri(p):
                     elements[p] = self.__extend_uri(p)
             if o not in elements:
                 if self.__is_variable(o):
-                    elements[o] = BNode(o)
+                    elements[o] = BNode(o.lstrip('?'))
                     self.set((elements[o], RDF.type, STOA.Variable))
                     self.set((elements[o], STOA.label, Literal(o, datatype=XSD.string)))
                 elif self.is_uri(o):
-                    elements[o] = self.__extend_uri(o)
+                    extended = self.__extend_uri(o)
+                    if extended == o:
+                        elements[o] = URIRef(o.lstrip('<').rstrip('>'))
+                    else:
+                        elements[o] = self.__extend_uri(o)
                 else:
-                    elements[o] = Literal(o)
+                    elements[o] = Literal(o.lstrip('"').rstrip('"'))
 
             self.add((elements[s], elements[p], elements[o]))
 
@@ -253,6 +273,13 @@ class StreamRequestGraph(FragmentRequestGraph):
         return 'stream'
 
     def transform(self, quad):
+        def __extract_lang(v):
+            if '@' in v:
+                (v, lang) = tuple(v.split('@'))
+            else:
+                lang = None
+            return v, lang
+
         def __transform(x):
             if type(x) == str or type(x) == unicode:
                 if self.is_uri(x):
@@ -263,7 +290,12 @@ class StreamRequestGraph(FragmentRequestGraph):
                 elif x.startswith('_:'):
                     return BNode(x.replace('_:', ''))
                 else:
-                    return Literal(x.replace('"', ''), datatype=XSD.string)
+                    (elm, lang) = __extract_lang(x)
+                    elm = elm.replace('"', '')
+                    if lang is not None:
+                        return Literal(elm, lang=lang)
+                    else:
+                        return Literal(elm, datatype=XSD.string)
             return x
 
         triple = quad[1:]
@@ -280,9 +312,30 @@ class QueryRequestGraph(FragmentRequestGraph):
         return 'query'
 
 
+class EnrichmentRequestGraph(FragmentRequestGraph):
+    def __init__(self, *args, **kwargs):
+        self._target_resource = ""
+        super(EnrichmentRequestGraph, self).__init__(*args, **kwargs)
+        self.add((self.request_node, RDF.type, STOA.EnrichmentRequest))
+
+    @property
+    def type(self):
+        return 'enrichment'
+
+    @property
+    def target_resource(self):
+        return self._target_resource
+
+    @target_resource.setter
+    def target_resource(self, value):
+        self._target_resource = URIRef(value)
+        self.set((self.request_node, STOA.targetResource, self._target_resource))
+
+
 class StoaClient(object):
     def __init__(self, broker_host='localhost', broker_port=5672, wait=False, monitoring=None, agora_host='localhost',
-                 agora_port=5002, stop_event=None):
+                 agora_port=5002, stop_event=None, exchange='stoa', topic_pattern='stoa.request',
+                 response_prefix='stoa.response'):
         self.agora = Agora(host=agora_host, port=agora_port)
         self.__connection = pika.BlockingConnection(pika.ConnectionParameters(host=broker_host, port=broker_port))
         self.__channel = self.__connection.channel()
@@ -295,6 +348,9 @@ class StoaClient(object):
         self.__message = None
         self.__wait = wait
         self.__stop_event = stop_event
+        self.__exchange = exchange
+        self.__topic_pattern = topic_pattern
+        self.__response_prefix = response_prefix
 
     def __monitor_consume(self, t):
         log.debug('Stoa client monitor started...')
@@ -311,12 +367,16 @@ class StoaClient(object):
         self.__message = message
 
         self.__accept_queue = self.__channel.queue_declare(auto_delete=True).method.queue
-        self.__channel.queue_bind(exchange='stoa', queue=self.__accept_queue,
-                                  routing_key='stoa.response.{}'.format(str(message.agent_id)))
+        self.__channel.queue_bind(exchange=self.__exchange, queue=self.__accept_queue,
+                                  routing_key='{}.{}'.format(self.__response_prefix, str(message.agent_id)))
 
-        self.__channel.basic_publish(exchange='stoa',
-                                     routing_key='stoa.request.{}'.format(self.__message.type),
-                                     body=message.serialize(format='turtle'))
+        body = message.serialize(format='turtle')
+
+        self.__channel.basic_publish(exchange=self.__exchange,
+                                     routing_key='{}.{}'.format(self.__topic_pattern, self.__message.type),
+                                     body=body)
+
+        log.debug(body)
         log.info('sent {} request!'.format(self.__message.type))
 
         self.__listening = True
@@ -324,19 +384,25 @@ class StoaClient(object):
 
     def __consume(self):
         def __response_callback(properties, body):
+            stop_flag = False
             if properties.headers.get('state', None) == 'end':
                 log.info('End of stream received!')
-                self.stop()
-            else:
-                try:
-                    items = json.loads(body)
-                except ValueError:
-                    items = eval(body)
+                stop_flag = True
 
-                if not isinstance(items, list):
+            format = properties.headers.get('format', 'json')
+            if format == 'turtle':
+                graph = Graph()
+                graph.parse(StringIO.StringIO(body), format=format)
+                yield properties.headers, graph
+            else:
+                items = json.loads(body) if format == 'json' else eval(body)
+                if items and not isinstance(items, list):
                     items = [items]
                 for item in items:
                     yield properties.headers, item
+
+            if stop_flag:
+                self.stop()
 
         log.debug('Waiting for acceptance...')
         for message in self.__channel.consume(self.__accept_queue, no_ack=True, inactivity_timeout=1):
@@ -407,4 +473,21 @@ def get_query_generator(*args, **kwargs):
     client = StoaClient(**kwargs)
     request = QueryRequestGraph(prefixes=client.agora.prefixes, *args)
     request.broker_host = kwargs['broker_host']
+    return client.request(request)
+
+
+def get_enrichment_generator(*args, **kwargs):
+    def apply_target(x):
+        if x.startswith('*'):
+            return x.replace('*', '<{}>'.format(target))
+        return x
+
+    target = kwargs['target']
+    del kwargs['target']
+    args = map(lambda x: apply_target(x), args)
+
+    client = StoaClient(**kwargs)
+    request = EnrichmentRequestGraph(prefixes=client.agora.prefixes, *args)
+    request.broker_host = kwargs['broker_host']
+    request.target_resource = target
     return client.request(request)
