@@ -359,7 +359,7 @@ class StoaClient(object):
                 self.stop()
                 break
             else:
-                time.sleep(1)
+                time.sleep(0.1)
 
     def request(self, message):
         self.__response_queue = self.__channel.queue_declare(auto_delete=True).method.queue
