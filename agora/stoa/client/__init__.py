@@ -26,6 +26,8 @@ import json
 import logging
 import time
 import uuid
+
+import re
 from abc import abstractproperty, ABCMeta
 from datetime import datetime
 from threading import Thread
@@ -274,8 +276,12 @@ class StreamRequestGraph(FragmentRequestGraph):
 
     def transform(self, quad):
         def __extract_lang(v):
+            def __lang_tag_match(strg, search=re.compile(r'[^a-z]').search):
+                return not bool(search(strg))
+
             if '@' in v:
-                (v, lang) = tuple(v.split('@'))
+                (v_aux, lang) = tuple(v.split('@'))
+                (v, lang) = (v_aux, lang) if __lang_tag_match(lang) else (v, None)
             else:
                 lang = None
             return v, lang
