@@ -469,16 +469,27 @@ class StoaClient(object):
 
 
 def get_fragment_generator(*args, **kwargs):
-    client = StoaClient(**kwargs)
+    stoa_kwargs = kwargs['STOA']
+    client = StoaClient(**stoa_kwargs)
     request = StreamRequestGraph(prefixes=client.agora.prefixes, *args)
-    request.broker_host = kwargs['broker_host']
+    if 'updating' in kwargs:
+        request.add((request.request_node, STOA.expectedUpdatingDelay, Literal(kwargs['updating'], datatype=XSD.integer)))
+    if 'excl' in kwargs:
+        request.add((request.request_node, STOA.allowGeneralisation, Literal(False, datatype=XSD.boolean)))
+    request.broker_host = stoa_kwargs['broker_host']
     return client.request(request)
 
 
 def get_query_generator(*args, **kwargs):
-    client = StoaClient(**kwargs)
+    stoa_kwargs = kwargs['STOA']
+    client = StoaClient(**stoa_kwargs)
     request = QueryRequestGraph(prefixes=client.agora.prefixes, *args)
-    request.broker_host = kwargs['broker_host']
+    if 'updating' in kwargs:
+        request.add(
+            (request.request_node, STOA.expectedUpdatingDelay, Literal(kwargs['updating'], datatype=XSD.integer)))
+    if 'excl' in kwargs:
+        request.add((request.request_node, STOA.allowGeneralisation, Literal(False, datatype=XSD.boolean)))
+    request.broker_host = stoa_kwargs['broker_host']
     return client.request(request)
 
 
