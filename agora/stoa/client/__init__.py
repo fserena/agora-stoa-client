@@ -473,8 +473,9 @@ def get_fragment_generator(*args, **kwargs):
     client = StoaClient(**stoa_kwargs)
     request = StreamRequestGraph(prefixes=client.agora.prefixes, *args)
     if 'updating' in kwargs:
-        request.add((request.request_node, STOA.expectedUpdatingDelay, Literal(kwargs['updating'], datatype=XSD.integer)))
-    if 'excl' in kwargs:
+        request.add(
+            (request.request_node, STOA.expectedUpdatingDelay, Literal(kwargs['updating'], datatype=XSD.integer)))
+    if 'gen' in kwargs:
         request.add((request.request_node, STOA.allowGeneralisation, Literal(False, datatype=XSD.boolean)))
     request.broker_host = stoa_kwargs['broker_host']
     return client.request(request)
@@ -487,7 +488,7 @@ def get_query_generator(*args, **kwargs):
     if 'updating' in kwargs:
         request.add(
             (request.request_node, STOA.expectedUpdatingDelay, Literal(kwargs['updating'], datatype=XSD.integer)))
-    if 'excl' in kwargs:
+    if 'gen' in kwargs:
         request.add((request.request_node, STOA.allowGeneralisation, Literal(False, datatype=XSD.boolean)))
     request.broker_host = stoa_kwargs['broker_host']
     return client.request(request)
