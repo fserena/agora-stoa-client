@@ -476,7 +476,9 @@ def get_fragment_generator(*args, **kwargs):
         request.add(
             (request.request_node, STOA.expectedUpdatingDelay, Literal(kwargs['updating'], datatype=XSD.integer)))
     if 'gen' in kwargs:
-        request.add((request.request_node, STOA.allowGeneralisation, Literal(False, datatype=XSD.boolean)))
+        request.add((request.request_node, STOA.allowGeneralisation, Literal(True, datatype=XSD.boolean)))
+    if 'events' in kwargs:
+        request.add((request.request_node, STOA.updateOnEvents, Literal(True, datatype=XSD.boolean)))
     request.broker_host = stoa_kwargs['broker_host']
     return client.request(request)
 
@@ -489,7 +491,9 @@ def get_query_generator(*args, **kwargs):
         request.add(
             (request.request_node, STOA.expectedUpdatingDelay, Literal(kwargs['updating'], datatype=XSD.integer)))
     if 'gen' in kwargs:
-        request.add((request.request_node, STOA.allowGeneralisation, Literal(False, datatype=XSD.boolean)))
+        request.add((request.request_node, STOA.allowGeneralisation, Literal(True, datatype=XSD.boolean)))
+    if 'events' in kwargs:
+        request.add((request.request_node, STOA.updateOnEvents, Literal(True, datatype=XSD.boolean)))
     request.broker_host = stoa_kwargs['broker_host']
     return client.request(request)
 
