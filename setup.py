@@ -28,7 +28,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="Agora-Stoa-Client",
-    version="0.1.2",
+    version="0.2.0",
     author="Fernando Serena",
     author_email="fernando.serena@centeropenmiddleware.com",
     description="Python-based client to interact with a cluster of Agora Stoas",
