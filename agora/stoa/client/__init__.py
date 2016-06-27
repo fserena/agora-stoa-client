@@ -470,6 +470,7 @@ class StoaClient(object):
 
 def get_fragment_generator(*args, **kwargs):
     stoa_kwargs = kwargs['STOA']
+    stoa_kwargs.update({k: kwargs[k] for k in kwargs if k == 'wait' or k == 'monitoring'})
     client = StoaClient(**stoa_kwargs)
     request = StreamRequestGraph(prefixes=client.agora.prefixes, *args)
     if 'updating' in kwargs:
@@ -485,6 +486,7 @@ def get_fragment_generator(*args, **kwargs):
 
 def get_query_generator(*args, **kwargs):
     stoa_kwargs = kwargs['STOA']
+    stoa_kwargs.update({k: kwargs[k] for k in kwargs if k == 'wait' or k == 'monitoring'})
     client = StoaClient(**stoa_kwargs)
     request = QueryRequestGraph(prefixes=client.agora.prefixes, *args)
     if 'updating' in kwargs:
